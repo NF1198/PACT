@@ -24,20 +24,53 @@ SHUTDOWN_GRACE_SECONDS = 10
 
 
 class ActorContext:
+    """
+    A context that manages execution of actors.
 
-    def __init__(self, event_loop=None, shutdown_gace_seconds=SHUTDOWN_GRACE_SECONDS):
+    Example usage: 
+
+    def main():
+
+        event_loop = asyncio.get_event_loop()
+        actor_context = ActorContext(event_loop=event_loop)
+        try:
+            actor_context.execute(GreetingActor, 'root', greeting="from root")
+        finally:
+            event_loop.close()
+
+    """
+
+    def __init__(self, event_loop=None, shutdown_grace_seconds=SHUTDOWN_GRACE_SECONDS):
+        """
+        Constructs a new ActorContext instance.
+
+        event_loop                (optional) asyncio.AbstractEventLoop instance
+                                    If not specified, will use asyncio.get_event_loop()
+        shutdown_grace_seconds    number of seconds to allow for the root actor to
+                                  finish execution before cancelling the task
+                                  running the actor
+        """
         self._event_loop = event_loop if event_loop is not None else asyncio.get_event_loop()
-        self._shutdown_grace_seconds = shutdown_gace_seconds
+        self._shutdown_grace_seconds = shutdown_grace_seconds
         self._log = logging.getLogger(ActorContext.__name__)
 
     def execute(self, root_actor_class, root_instance_name='root', *args, **kwargs):
+        """
+        Starts execution of the context using the specified
+        root actor class. Calling this method will block 
+        until the root actor task completes.
 
+        root_actor_class            Actor (not an instance)
+        root_instance_name          instance_name to apply to the root actor
+        *args                       arguments to pass to the root actor's run method
+        **kwargs                    keyword arguments to pass to the root actor's run method
+        """
         loop = self._event_loop
         log = self._log
         shutdown_grace_sec = self._shutdown_grace_seconds
 
         def ask_exit(signame, loop, actor, actor_task):
-            log.info("got signal {}: exit".format(signame))
+            log.info("got signal {}".format(signame))
 
             async def wait_for_termination(loop, actor, actor_task):
                 try:
@@ -75,7 +108,4 @@ class ActorContext:
             loop.call_soon(lambda: loop.stop())
         root_task.add_done_callback(stop_loop)
 
-        try:
-            loop.run_forever()
-        finally:
-            loop.close()
+        loop.run_forever()

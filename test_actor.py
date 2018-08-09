@@ -29,8 +29,13 @@ class ActorTest(unittest.TestCase):
     def test_actor(self):
 
         logging.basicConfig(level=logging.INFO)
-        actor_context = ActorContext()
-        actor_context.execute(GreetingActor, 'root', greeting="from root")
+
+        event_loop = asyncio.get_event_loop()
+        actor_context = ActorContext(event_loop=event_loop)
+        try:
+            actor_context.execute(GreetingActor, 'root', greeting="from root")
+        finally:
+            event_loop.close()
 
 
 class GreetingActor(Actor):
@@ -52,7 +57,7 @@ class GreetingActor(Actor):
         try:
             start_time = self.time
             if self.instance_id is 'root':
-                for idx in range(0,1):
+                for idx in range(0, 1):
                     child_greeter = self.spawn_child(
                         GreetingActor, instance_id='child_{}'.format(idx), greeting="from child {}!".format(idx))
                     await child_greeter.terminate(self)
@@ -66,7 +71,7 @@ class GreetingActor(Actor):
                         break
                     else:
                         self.log.debug(
-                        "message: {} -> {}".format((sender.__class__.__name__, sender.instance_id), str(message)))
+                            "message: {} -> {}".format((sender.__class__.__name__, sender.instance_id), str(message)))
                 except asyncio.TimeoutError:
                     self.log.info("waiting for messages...")
         except asyncio.CancelledError:
@@ -77,6 +82,6 @@ class GreetingActor(Actor):
         sender = self if sender is None else sender
         self.log.debug("terminate method called...")
         try:
-            await self.terminate_children(sender)
+            await self.terminate_children()
         finally:
             await self.send_message(sender, self.MSG_TERMINATE)
