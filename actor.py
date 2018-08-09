@@ -50,6 +50,10 @@ class Actor(ABC):
         return self.event_loop.time()
 
     @property
+    def parent(self):
+        return self._parent
+
+    @property
     def children(self):
         return self._children
 
@@ -95,6 +99,12 @@ class Actor(ABC):
     def prune_children(self):
         [t.exception() for _,t in self._children.items() if t.done()]
         self._children = {actor: task for actor, task in self._children.items() if not task.done() }
+
+    def detach_child(self, child_actor):
+        if child_actor in self.children:
+            del(self.children[child_actor])
+        else:
+            self.log.warning("Attempted to remove unowned child.")
 
     @staticmethod
     def Spawn(actor_class, event_loop, parent=None, instance_id=None, log_hierarchy=[], args=[], kwargs={}):
