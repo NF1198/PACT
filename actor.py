@@ -52,7 +52,7 @@ class Actor(ABC):
     async def run(self):
         """
         The run method represents the actor's main loop.
-        
+
         A minimal implementation can be based on the following:
 
         MSG_TERMINATE = "MSG_TERMINATE"
@@ -174,8 +174,8 @@ class Actor(ABC):
 
         actor_class         Actor or Subclass (not an instance)
         instance_id         an id to assign to the child
-        *args               other arguments to pass to the new actor's run method
-        *kwargs             other keyword arguments to pass to the new actor's run method
+        *args               other arguments to pass to the new actor's __init__ method
+        *kwargs             other keyword arguments to pass to the new actor's __init__ method
 
         returns             actor instance
         """
@@ -215,7 +215,7 @@ class Actor(ABC):
         returns               None
         """
         try:
-            for child_actor in (a for a,_ in self.children.items()):
+            for child_actor in (a for a, _ in self.children.items()):
                 await child_actor.terminate()
             self.prune_children()
         except asyncio.CancelledError:
@@ -224,7 +224,7 @@ class Actor(ABC):
     async def cancel_children(self):
         """
         Cancels all children tasks by calling task.cancel()
-        
+
         This method should be called in an actor's main loop
         an except asyncio.CancelledError exception handler.
 
@@ -247,8 +247,9 @@ class Actor(ABC):
         used to clean up misbehaved children that didn't 
         notify the parent of their completion.
         """
-        [t.exception() for _,t in self._children.items() if t.done()]
-        self._children = {actor: task for actor, task in self._children.items() if not task.done() }
+        [t.exception() for _, t in self._children.items() if t.done()]
+        self._children = {actor: task for actor,
+                          task in self._children.items() if not task.done()}
 
     def detach_child(self, child_actor):
         """
@@ -257,7 +258,7 @@ class Actor(ABC):
         of __aexit__(...). 
 
         Refer to the documentation for __aexit__ for more information.
-        
+
         This is a synchronous method.
 
         returns                None
@@ -282,19 +283,18 @@ class Actor(ABC):
         parent                 an optional parent actor instance
         instance_id            an id to assign to the child
         log_hierarchy          [str], used to construct a logger and passed to children
-        args                   [arg] other arguments to pass to the new actor's run method
-        kwargs                 {k:arg} other keyword arguments to pass to the new actor's run method      
+        args                   [arg] other arguments to pass to the new actor's __init__ method
+        kwargs                 {k:arg} other keyword arguments to pass to the new actor's __init__ method      
 
         returns                (actor, child_task)
         """
 
-        async def actor_runner(actor, *args, **kwargs):
+        async def actor_runner(actor):
             async with actor:
-                await actor.run(*args, **kwargs)
+                await actor.run()
 
-        actor = actor_class()
+        actor = actor_class(*args, **kwargs)
         actor = actor.__actor_init__(parent, log_hierarchy,
-                            event_loop=event_loop, instance_id=instance_id)
-        child_task = event_loop.create_task(
-            actor_runner(actor, *args, **kwargs))
+                                     event_loop=event_loop, instance_id=instance_id)
+        child_task = event_loop.create_task(actor_runner(actor))
         return (actor, child_task)

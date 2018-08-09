@@ -42,6 +42,9 @@ class GreetingActor(Actor):
 
     MSG_TERMINATE = "TERMINATE"
 
+    def __init__(self, greeting=None):
+        self.greeting = greeting
+
     async def __aenter__(self):
         self.log.debug("__aenter__")
         pass
@@ -52,7 +55,7 @@ class GreetingActor(Actor):
         if self.parent:
             self.parent.detach_child(self)
 
-    async def run(self, greeting=None):
+    async def run(self):
         self.log.debug("run...")
         try:
             start_time = self.time
@@ -61,7 +64,7 @@ class GreetingActor(Actor):
                     child_greeter = self.spawn_child(
                         GreetingActor, instance_id='child_{}'.format(idx), greeting="from child {}!".format(idx))
                     await child_greeter.terminate(self)
-            self.log.info("Greetings {}".format(greeting))
+            self.log.info("Greetings {}".format(self.greeting))
             while True:
                 try:
                     if self.time - start_time > 5:
