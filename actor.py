@@ -12,8 +12,8 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-
 from abc import ABC, abstractmethod
+import sys, traceback
 import asyncio
 import logging
 from typing import Dict, List
@@ -22,31 +22,36 @@ import random
 
 class Actor(ABC):
 
-    @abstractmethod
+    MSG_TERMINATE = "MSG_TERMINATE"
+
     async def __aenter__(self):
         """
         Initialize any resources used by the actor.
 
         This is an asynchronous method.
         """
-        raise NotImplementedError()
+        return self
 
-    @abstractmethod
+    
     async def __aexit__(self, ext, exv, tb):
         """
         Release any resources used by the actor.
 
+        Any overrides should explicitly call this parent
+        method after closing local resources, i.e.:
+
+            await super(MyActor, self).__aexit__(ext, exv, tb)
+
         This is an asynchronous method.
 
-        Implementions should be based on the following
-        template:
-
-        async def __aexit__(self, ext, exv, tb):
-            await self.terminate_children()
+        """
+        try:
+            if len(self.children) > 0:
+                await self.terminate_children()
             if self.parent:
                 self.parent.detach_child(self)
-        """
-        raise NotImplementedError()
+        except Exception:
+            self.log.exception("Error encountered while cleaning up actor!")
 
     @abstractmethod
     async def run(self):
@@ -70,8 +75,7 @@ class Actor(ABC):
                 await self.cancel_children()
         """
         raise NotImplementedError()
-
-    @abstractmethod
+    
     async def terminate(self, sender=None):
         """
         Called to trigger termination of the actor.
@@ -86,9 +90,14 @@ class Actor(ABC):
             finally:
                 await self.send_message(sender, self.MSG_TERMINATE)
         """
-        raise NotImplementedError()
+        sender = sender if sender is not None else self
+        assert isinstance(sender, Actor)
+        try:
+            await self.terminate_children()
+        finally:
+            await self.send_message(sender, self.MSG_TERMINATE)
 
-    def __actor_init__(self, parent, log_hierarchy: List[str], instance_id: str = None, event_loop: asyncio.BaseEventLoop = None):
+    def __actor_init__(self, parent, log_hierarchy: List[str], instance_id: str, event_loop: asyncio.BaseEventLoop = None):
         """
         This method is called by the framework to initialize
         actor instances. This method should not be overriden.
@@ -168,7 +177,11 @@ class Actor(ABC):
         """
         return self._instance_id
 
-    def spawn_child(self, actor_class, instance_id=None, *args, **kwargs):
+    @property
+    def name(self):
+        return (self.__class__.__name__, self.instance_id)
+
+    def spawn_child(self, actor_class, instance_id, *args, **kwargs):
         """
         Spawn a child actor attached to the current actor.
 
@@ -181,8 +194,7 @@ class Actor(ABC):
         """
         assert issubclass(actor_class, Actor)
         actor, child_task = Actor.Spawn(
-            actor_class, self._event_loop, parent=self, instance_id=instance_id,
-            log_hierarchy=self.log_hierarchy, args=args, kwargs=kwargs)
+            actor_class, self._event_loop, self, instance_id, self.log_hierarchy, *args, **kwargs)
         self._children[actor] = child_task
         return actor
 
@@ -216,10 +228,15 @@ class Actor(ABC):
         """
         try:
             for child_actor in (a for a, _ in self.children.items()):
-                await child_actor.terminate()
+                await child_actor.terminate(sender=self)
+            child_tasks = [task for _,task in self.children.items()]
+            if len(child_tasks) > 0:
+                await asyncio.gather(*child_tasks)
             self.prune_children()
         except asyncio.CancelledError:
             pass
+        except Exception:
+            self.log.exception("Error terminating children.")
 
     async def cancel_children(self):
         """
@@ -246,6 +263,8 @@ class Actor(ABC):
         who's associated tasks are completed. This can be 
         used to clean up misbehaved children that didn't 
         notify the parent of their completion.
+
+        This is a synchronous method.
         """
         [t.exception() for _, t in self._children.items() if t.done()]
         self._children = {actor: task for actor,
@@ -269,7 +288,7 @@ class Actor(ABC):
             self.log.warning("Attempted to remove unowned child.")
 
     @staticmethod
-    def Spawn(actor_class, event_loop, parent=None, instance_id=None, log_hierarchy=[], args=[], kwargs={}):
+    def Spawn(actor_class, event_loop, parent, instance_id, log_hierarchy, *args, **kwargs):
         """
         This is a static method used to spawn a free actor.
         In most cases, end-user code should not call this method.
@@ -293,8 +312,8 @@ class Actor(ABC):
             async with actor:
                 await actor.run()
 
-        actor = actor_class(*args, **kwargs)
-        actor = actor.__actor_init__(parent, log_hierarchy,
-                                     event_loop=event_loop, instance_id=instance_id)
+        actor = actor_class.__call__(*args, **kwargs)
+        actor = actor.__actor_init__(parent, log_hierarchy, instance_id, event_loop)
         child_task = event_loop.create_task(actor_runner(actor))
         return (actor, child_task)
+     

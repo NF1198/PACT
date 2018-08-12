@@ -54,7 +54,7 @@ class ActorContext:
         self._shutdown_grace_seconds = shutdown_grace_seconds
         self._log = logging.getLogger(ActorContext.__name__)
 
-    def execute(self, root_actor_class, root_instance_name='root', *args, **kwargs):
+    def execute(self, root_actor_class, root_instance_name, log_hierarchy, *args, **kwargs):
         """
         Starts execution of the context using the specified
         root actor class. Calling this method will block 
@@ -98,7 +98,7 @@ class ActorContext:
         loop = asyncio.get_event_loop()
 
         root_actor, root_task = Actor.Spawn(
-            root_actor_class, loop, instance_id=root_instance_name, args=args, kwargs=kwargs)
+            root_actor_class, loop, None, root_instance_name, log_hierarchy, *args, **kwargs)
 
         for signame in ('SIGINT', 'SIGTERM'):
             loop.add_signal_handler(getattr(signal, signame),

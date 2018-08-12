@@ -28,14 +28,13 @@ class ActorTest(unittest.TestCase):
 
     def test_actor(self):
 
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.DEBUG)
 
         event_loop = asyncio.get_event_loop()
         actor_context = ActorContext(event_loop=event_loop)
-        try:
-            actor_context.execute(GreetingActor, 'root', greeting="from root")
-        finally:
-            event_loop.close()
+
+        actor_context.execute(GreetingActor, 'root',
+                                [], greeting="from root")
 
 
 class GreetingActor(Actor):
@@ -46,14 +45,13 @@ class GreetingActor(Actor):
         self.greeting = greeting
 
     async def __aenter__(self):
+        await super(GreetingActor, self).__aenter__()
         self.log.debug("__aenter__")
-        pass
+        return self
 
     async def __aexit__(self, ext, exv, tb):
         self.log.debug("__aexit__")
-        await self.terminate_children()
-        if self.parent:
-            self.parent.detach_child(self)
+        await super(GreetingActor, self).__aexit__(ext, exv, tb)
 
     async def run(self):
         self.log.debug("run...")
@@ -67,7 +65,7 @@ class GreetingActor(Actor):
             self.log.info("Greetings {}".format(self.greeting))
             while True:
                 try:
-                    if self.time - start_time > 5:
+                    if self.time - start_time > 1.2:
                         break
                     sender, message = await asyncio.wait_for(self.message_queue.get(), 1)
                     if message is self.MSG_TERMINATE:
@@ -80,11 +78,3 @@ class GreetingActor(Actor):
         except asyncio.CancelledError:
             self.log.error("the task running this actor was cancelled")
             await self.cancel_children()
-
-    async def terminate(self, sender=None):
-        sender = self if sender is None else sender
-        self.log.debug("terminate method called...")
-        try:
-            await self.terminate_children()
-        finally:
-            await self.send_message(sender, self.MSG_TERMINATE)
