@@ -4,8 +4,7 @@
 PACT is a simple actor framework build on top of Python's
 asyncio library.
 
-The ActorContext handles OS signals and attempts 
-to safely shutdown the actor hierarchy.
+The ActorContext handles OS signals and safely terminates the actor hierarchy.
 
 The test_actor test case demonstrates how to implement
 and call a simple actor hierarchy. Running the example
